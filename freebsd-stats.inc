@@ -1,11 +1,17 @@
 /* FreeBSD-native system-stat readers. Included in tclock.c's platform reader
  * section by freebsd-build.awk when building on FreeBSD. */
 #include <sys/param.h>
-#include <sys/dkstat.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
 
 #include <limits.h>
+
+/* The kern.cp_time and kern.cp_times sysctls expose these five CPU states. */
+enum { FBSD_CP_USER, FBSD_CP_NICE, FBSD_CP_SYS, FBSD_CP_INTR, FBSD_CP_IDLE,
+       FBSD_CPUSTATES };
+
+/* FreeBSD hides this BSD interface under strict _XOPEN_SOURCE builds. */
+extern int getloadavg(double [], int);
 
 static double cpu_busy_percent(unsigned long long total,
                                unsigned long long idle,
@@ -23,7 +29,7 @@ static double cpu_busy_percent(unsigned long long total,
 
 static bool read_cpu(double *overall, double *per, int *nper)
 {
-    long aggregate[CPUSTATES];
+    long aggregate[FBSD_CPUSTATES];
     size_t aggregate_len = sizeof(aggregate);
     if (sysctlbyname("kern.cp_time", aggregate, &aggregate_len, NULL, 0) != 0 ||
         aggregate_len < sizeof(aggregate))
@@ -31,7 +37,7 @@ static bool read_cpu(double *overall, double *per, int *nper)
 
     size_t bytes = 0;
     if (sysctlbyname("kern.cp_times", NULL, &bytes, NULL, 0) != 0 ||
-        bytes < sizeof(long) * CPUSTATES)
+        bytes < sizeof(long) * FBSD_CPUSTATES)
         return false;
     long *counters = malloc(bytes);
     if (!counters)
@@ -41,7 +47,7 @@ static bool read_cpu(double *overall, double *per, int *nper)
         return false;
     }
 
-    int n = (int)(bytes / (sizeof(long) * CPUSTATES));
+    int n = (int)(bytes / (sizeof(long) * FBSD_CPUSTATES));
     if (n > MAX_CORES)
         n = MAX_CORES;
     if (n <= 0) {
@@ -50,10 +56,10 @@ static bool read_cpu(double *overall, double *per, int *nper)
     }
 
     unsigned long long total = 0, idle = 0;
-    for (int s = 0; s < CPUSTATES; s++) {
+    for (int s = 0; s < FBSD_CPUSTATES; s++) {
         unsigned long long value = (unsigned long long)aggregate[s];
         total += value;
-        if (s == CP_IDLE)
+        if (s == FBSD_CP_IDLE)
             idle = value;
     }
     *overall = g_have_prev
@@ -63,11 +69,11 @@ static bool read_cpu(double *overall, double *per, int *nper)
 
     for (int cpu = 0; cpu < n; cpu++) {
         unsigned long long cpu_total = 0, cpu_idle = 0;
-        for (int s = 0; s < CPUSTATES; s++) {
+        for (int s = 0; s < FBSD_CPUSTATES; s++) {
             unsigned long long value = (unsigned long long)
-                counters[cpu * CPUSTATES + s];
+                counters[cpu * FBSD_CPUSTATES + s];
             cpu_total += value;
-            if (s == CP_IDLE)
+            if (s == FBSD_CP_IDLE)
                 cpu_idle = value;
         }
         per[cpu] = g_have_prev
