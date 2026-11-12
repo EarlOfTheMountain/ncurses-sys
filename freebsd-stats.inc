@@ -4,7 +4,6 @@
 #include <sys/dkstat.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
-#include <sys/user.h>
 
 #include <limits.h>
 
@@ -88,7 +87,7 @@ static bool read_mem(mem_t *m)
 {
     unsigned long long physical_bytes = 0;
     unsigned int page_size = 0;
-    u_long free_pages = 0, inactive_pages = 0, cache_pages = 0;
+    unsigned long free_pages = 0, inactive_pages = 0, cache_pages = 0;
     size_t len;
 
     len = sizeof(physical_bytes);
@@ -144,19 +143,9 @@ static bool read_uptime(long *uptime, int *procs)
 
     time_t now = time(NULL);
     *uptime = now > boot.tv_sec ? (long)(now - boot.tv_sec) : 0;
+    /* FreeBSD process enumeration requires private struct kinfo_proc details;
+     * leave the optional process count unavailable rather than include headers
+     * that conflict with strict POSIX feature-test settings. */
     *procs = 0;
-
-    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0 };
-    size_t bytes = 0;
-    if (sysctl(mib, 4, NULL, &bytes, NULL, 0) == 0 && bytes > 0) {
-        struct kinfo_proc *entries = malloc(bytes);
-        if (entries) {
-            if (sysctl(mib, 4, entries, &bytes, NULL, 0) == 0) {
-                size_t count = bytes / sizeof(*entries);
-                *procs = count > INT_MAX ? INT_MAX : (int)count;
-            }
-            free(entries);
-        }
-    }
     return true;
 }
